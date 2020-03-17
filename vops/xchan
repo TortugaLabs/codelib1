@@ -1,0 +1,165 @@
+#!/bin/sh
+
+# tags:_attic
+# target::/usr/local/bin/
+# mode:755
+
+version="0.2"
+#
+# Private communication channel handler script
+#
+set -euf -o pipefail
+
+access_dir="/etc/vops"
+guest=""
+xid=""
+
+while [ $# -gt 0 ]
+do
+  case "$1" in
+  --xid=*) xid=${1#--xid=} ;;
+  --guest=*) guest="${1#--guest=}" ;;
+  *) break ;;
+  esac
+  shift
+done
+
+die() {
+  local rc="$1" ; shift
+  echo "$@"
+  exit $rc
+}
+
+sanitize() {
+  echo "$1" | tr "A-Z./-" "a-z___" | tr -dc 'a-z0-9_'
+}
+
+auth() {
+  if [ -f "$access_dir/$guest.sh" ] ; then
+    . "$access_dir/$guest.sh"
+  elif [ -f "$access_dir/default.sh" ] ; then
+    . "$access_dir/default.sh"
+  fi
+  guest="$1"
+}  
+
+op_datetime() {
+  echo "datetime $(date +"%s")"
+}
+op_genuuid() {
+  echo "uuid $(cat /proc/sys/kernel/random/uuid)"
+}
+op_version() {
+  echo "version xchan $version"
+}
+op_usage() {
+  echo "Enter \$RANDOM cmd [args]"
+}
+
+xop_logout() {
+  exec "$0" --xid="$xid"
+}
+
+xop_auth() {
+  if [ $# -lt 2 ] ; then
+    echo "$xid : usage: auth guest psk"
+    return 2
+  fi
+  if [ -n "$guest" ] ; then
+    if [ x"$1" = x"$guest" ] ; then
+      echo "$xid : already authenticated"
+      return 0
+    else
+      echo "$xid : already authenticated as $guest, logout first"
+      return 1
+    fi
+  fi
+  local inguest="$(sanitize "$1")" inpsk="$2"
+  if [ -f "$access_dir/$inguest.vfat" ] ; then
+    psk=$(mcopy -i "$access_dir/$inguest.vfat" ::psk.txt - 2>/dev/null)
+    if [ x"$psk" = x"$inpsk" ] ; then
+      auth "$inguest"
+      echo "$xid : $guest authenticated"
+      guest="$inguest"
+      echo "$xid : loaded policies for $guest"
+      return 0
+    fi
+  fi
+  echo login error: $inguest 1>&2
+  echo "$xid : forbidden"
+  return 2
+}
+
+
+if [ -n "$guest" ] ; then
+  auth "$guest"
+fi
+if [ -n "$xid" ] ; then
+  echo "$xid : OK"
+  echo "$xid = 0"
+fi
+
+errmsg() {
+  echo "$@" 1>&4
+}
+
+while read xid cmd args
+do
+  [ -z "$xid" ] && continue || :
+  [ -z "$cmd" ] && cmd="usage"
+
+  if type "xop_$cmd" >/dev/null 2>&1 ; then
+    rc=0
+    "xop_$cmd" $args || rc=$?
+    echo "$xid = $rc"
+  elif type "op_$cmd" >/dev/null 2>&1 ; then
+    exec 3>&1
+    (
+      exec 4>&2 2>&1
+      rc=0
+      "op_$cmd" $args || rc=$?
+      echo "$rc"
+    ) | (
+      read P || return
+      while read L
+      do
+        echo "$xid : $P"
+        P="$L"
+      done
+      echo "$xid = $P"
+    )
+    
+  else
+    echo "$xid : unknown cmd: $cmd"
+    [ -z "$guest" ] && echo "$xid : perhaps you need to login first"
+    echo "$xid = 1"
+  fi 
+
+done
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+exit
+
