@@ -1,0 +1,16 @@
+#!/bin/sh
+#
+# tags:alpine-locald
+# target::/etc/local.d/
+# mode:755
+# - check ovl partition
+#
+  cd /media
+  for dir in */
+  do
+    [ ! -f "$dir/$(hostname).apkovl.tar.gz" ] && continue
+    [ ! -x "$dir/$(hostname).apkovl.tar.gz" ] && continue
+    umount "$dir" 
+  done
+  mount -av
+      	

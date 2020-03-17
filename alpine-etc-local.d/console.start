@@ -1,0 +1,23 @@
+#!/bin/sh
+#
+# tags:alpine-hw
+# target::/etc/local.d/console.start
+# mode:755
+
+
+conf_d=/etc/conf.d/conio
+stty=''
+
+if [ -f "$conf_d" ] ; then
+  . "$conf_d"
+fi
+
+for q in $(seq 1 9)
+do
+ [ ! -e /dev/tty$q ] && continue
+ (
+  [ -n "$stty" ] && stty $stty
+  TERM=linux setterm -blank 1
+ ) < /dev/tty$q >/dev/tty$q 2>&1
+done
+

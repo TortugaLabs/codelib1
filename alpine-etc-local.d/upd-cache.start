@@ -1,0 +1,42 @@
+#!/bin/sh
+# tags:alpine-locald
+# target::/etc/local.d/
+# mode:755
+
+bootmsg() {
+  while read ln
+  do
+    echo "$ln" > /dev/kmsg
+  done
+}
+
+fix_apk_ptrs() {
+  if [ ! -d /etc/apk/cache ] ; then
+    for dir in /media/*
+    do
+      [ ! -f "$dir/.alpine-release" ] && continue
+      if [ ! -d "$dir/cache" ] ; then
+	mount -o remount,rw "$dir" || exit 1
+	if ! mkdir "$dir/cache" ; then
+	  mount -o remount,ro "$dir"
+	  exit 1
+	fi
+	mount -o remount,ro "$dir"
+      fi
+      rm -f /etc/apk/cache
+      ln -s "$dir"/cache /etc/apk/cache
+      break
+    done
+  fi
+   
+}
+
+fix_apk_ptrs
+
+
+
+
+
+
+    
+

@@ -1,0 +1,46 @@
+#!/bin/sh
+#
+# - check repos
+#
+# tags:alpine-locald
+# target::/etc/local.d/
+# mode:755
+
+#
+relfile=/etc/alpine-release
+[ -f $relfile ] || exit 0
+
+repocfg=/etc/apk/repositories
+
+fix_local_repos() {
+  while read ln
+  do
+    if (echo "$ln" | grep -q '^:/media/') ; then
+      repo=${ln:1}
+      if [ ! -d "$repo" ] ; then
+	# Find the right repo directory...
+	for j in /media/*
+	do
+	  [ ! -f "$j/.alpine-release" ] && continue
+	  [ ! -d "$j/apks" ] && continue
+	  ln="$j/apks"
+	  break
+	done
+      fi
+    fi
+    echo "$ln"
+  done
+}
+
+fix_remote_repos() {
+  local version=$(cut -d. -f 1-2 $relfile)
+  sed -e 's!/v[0-9][0-9]*\.[0-9][0-9]*/!/v'"$version"'/!'
+}
+
+pretxt=$(sed -e 's/^/:/' $repocfg)
+newtxt=$(echo "$pretxt" | fix_remote_repos | fix_local_repos)
+
+if [ x"$pretxt" != x"$newtxt" ] ; then
+  # Update APK repository files.
+  echo "$newtxt" | sed -e 's/^://' | tee $repocfg | md5sum
+fi
