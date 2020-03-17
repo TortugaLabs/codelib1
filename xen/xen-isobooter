@@ -1,0 +1,157 @@
+#!/bin/sh
+#
+# tags:alpine-xen
+# target::/usr/local/bin/
+# mode:755
+#
+set -euf -o pipefail
+
+#~ exec >/tmp/bl 2>&1
+#~ echo ": $*"
+#~ set -x
+
+fatal() {
+  echo "$@" 1>&2
+  exit 2
+}
+
+fix_args() {
+  #  enable Xen console... boot messages
+  echo "$* console=hvc0" \
+    | sed -e 's/console=ttyS0,*\d*//'
+}
+
+write_config() {
+  [ -z "$output" ] && fatal "No output file specified"
+  [ ! -f "$output" ] && fatal "$output: No output file found"
+  local kernel="$1" initrd="$2" args="$3"
+  args="$(fix_args "$args")"
+  (
+    case "$fmt" in
+    sxp)
+      echo -n "linux (kernel $kernel)"
+      [ -n "$initrd" ] && echo -n "(ramdisk $initrd)"
+      [ -n "$args" ] && echo -n "(args $args)"
+      ;;
+    simple)
+      echo "kernel $kernel"
+      [ -n "$initrd" ] && echo "ramdisk $initrd"
+      [ -n "$args" ] && echo "args $args"
+      ;;
+    simple0)
+      printf "kernel $kernel\0"
+      [ -n "$initrd" ] && printf "ramdisk $initrd\0"
+      [ -n "$args" ] && printf "args $args\0"
+      ;;
+    esac
+  ) > "$output"  
+}
+
+_bootiso2() {
+  exec 3>&1 ; exec 1>&2 ; exec 2>&3
+  [ -z "$outdir" ] && fatal "No output directory specified"
+  [ -d "$outdir" ] || fatal "Output directory not found: $outdir"
+
+  local tempdir="$1" kernel="$2" initrd="$3" args="$4"
+  [ ! -f "$tempdir$kernel" ] && fatal "$kernel not found"
+  [ -n "$initrd" ] && [ ! -f "$tempdir$initrd" ] && fatal "$initrd not found"
+  local kpath="$outdir/$(basename "$kernel")" msg=""
+  if cp -a "$tempdir$kernel" "$kpath" ; then
+    local rpath=""
+    if [ -n "$initrd" ] ; then
+      rpath="$outdir/$(basename "$initrd")"
+      if cp -a "$tempdir$initrd" "$rpath" ; then
+	write_config "$kpath" "$rpath" "$args" || exit 1
+      else
+	msg="Error copying $rpath"
+      fi
+    fi
+  else
+    msg="Error copying $kpath"
+  fi
+  [ -n "$msg" ] && fatal "$msg"
+  return 0
+}
+
+bootiso() {
+  local isofile="$1"
+  ( echo "$isofile" | grep -q '\.iso$' ) || return 1 # We only support iso files
+  local loopdev=$(losetup -f)
+  losetup -r $loopdev "$isofile" || fatal "Unable to setup loop device: $isofile"
+  local tempdir=$(mktemp -d) msg=""
+  if mount -t iso9660 -r $loopdev $tempdir ; then
+    # Find syslinux.cfg...
+    syslinux_cfg=$(find $tempdir -name syslinux.cfg|head -1)
+    if [ -n "$syslinux_cfg" ] ; then
+      local kernel=$(awk '$1 == "KERNEL" { $1 = ""; print }' "$syslinux_cfg"| sed -e 's/^ *//'|head -1)
+      local initrd=$(awk '$1 == "INITRD" { $1 = ""; print }' "$syslinux_cfg"| sed -e 's/^ *//'|head -1)
+      local args=$(awk '$1 == "APPEND" { $1 = ""; print }' "$syslinux_cfg"| sed -e 's/^ *//'|head -1)
+      #echo "kernel=($kernel)"
+      #echo "initrd=($initrd)"
+      #echo "args=($args)"
+      if [ -n "$kernel" ] ; then
+	msg=$(_bootiso2 "$tempdir" "$kernel" "$initrd" "$args")
+      else
+	msg="No kernel found"
+      fi
+    else
+      msg="Missing syslinux configuration"
+    fi
+    umount $tempdir
+  else
+    msg="Failed to mount: $isofile"
+  fi
+  losetup -d $loopdev
+  rm -rf "$tempdir"
+  if [ -n "$msg" ] ; then
+    fatal "$msg"
+  fi
+  return 0
+}
+
+  
+outdir=''
+runme=''
+
+while [ $# -gt 0 ]
+do
+  case "$1" in
+  --output=*)
+    output=${1#--output=}
+    ;;
+  --output-format=*)
+    fmt=${1#--output-format=}
+    ;;
+  --output-directory=*)
+    outdir=${1#--output-directory=*}
+    ;;
+  --run=*)
+    runme=${1#--run=}
+    ;;
+  -D*)
+    # Export variables
+    export "${1#-D}"
+    ;;
+  *)
+    break
+    ;;
+  esac
+  shift
+done
+
+if bootiso "$1" ; then
+  if [ -n "$runme" ] ; then
+    "$runme" "$@" || exit 1
+  fi
+  exit 0
+else
+  exit 1
+fi
+   
+
+
+
+
+    
+
+
