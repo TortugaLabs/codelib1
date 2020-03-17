@@ -1,0 +1,21 @@
+#!/bin/sh
+#
+# tags:alpine-hw
+# target::/usr/local/bin/
+# mode:755
+
+set -euf -o pipefail
+
+# Prevent spam...
+if (echo "$*" | grep -q Rebuild ) ; then
+  # Check if scrubber is running
+  cprocs=$(ps ax)
+  if (echo "$cprocs" | grep -q scrub) ; then
+    # This is a known thing... ignore...
+    exit 0
+  fi
+fi
+
+if ! msg=$(/usr/local/bin/notify "MDADM@$(hostname): $*" 2>&1) ; then
+  echo "$msg"
+fi

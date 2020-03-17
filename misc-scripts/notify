@@ -1,0 +1,133 @@
+#!/bin/sh
+#
+# tags:alpine-notify-srv alpine-hw
+# target::/usr/local/bin/
+# mode:755
+#
+set -euf -o pipefail
+
+bot_api="https://api.telegram.org/bot"
+
+
+send_notification() {
+  if [ -n "$state" ] ; then
+    # OK, delete previous message
+    if [ -f "$state" ] ; then
+      local omsid=$(cat "$state")
+      if [ -n "$omsid" ] ; then
+        local dres=$(wget -O- "${bot_api}${bot_key}/deleteMessage?chat_id=${chat_id}&message_id=$omsid")
+      fi
+      rm -f "$state"
+    fi
+  fi
+
+  local nmsid="" res
+
+  while [ -z "$nmsid" ]
+  do
+    res=$(wget -O- "${bot_api}${bot_key}/sendMessage?${textmode}${ding}chat_id=${chat_id}&text=$(urlencode "$*")") || :
+    if ! (echo "$res" | grep -q '"message_id":') ; then
+      # Failed...
+      if [ -n "$textmode" ] ; then
+        # Retry in plain text mode...
+        textmode=''
+      else
+        # Just fail dammit!
+        break
+      fi
+    else
+      nmsid=$(echo "$res" | sed -e 's/^.*"message_id"://' | cut -d, -f1 | tr -dc 0-9)
+      break
+    fi
+  done
+  
+  if [ -n "$nmsid" ] ; then
+    # Succesful...
+    if [ -n "$state" ] ; then
+      # Save to state file...
+      echo "$nmsid" > "$state"
+    fi
+    echo "OK:$nmsid"
+    return 0 # signal success
+  fi
+  echo "FAILED"
+  return 1
+}
+
+urlencode() {
+  # urlencode <string>
+  old_lc_collate=${LC_COLLATE:-}
+  LC_COLLATE=C
+  
+  local length="${#1}"
+  local i=1
+  while [ $i -le $length ] ; do
+    local c=$(expr substr "$1" $i 1)
+    case $c in
+      [a-zA-Z0-9.~_-]) printf "$c" ;;
+      *) printf '%%%02X' "'$c" ;;
+    esac
+    i=$(expr $i + 1)
+  done
+  
+  LC_COLLATE=$old_lc_collate
+}
+
+telegram_notify() {
+  mslimit=4090
+  textmode="parse_mode=MarkdownV2&"
+  ding=''
+  state=''
+
+  while [ $# -gt 0 ]
+  do
+    case "$1" in
+    --state=*)
+      # keep a state file
+      state="${1#--state=}"
+      ;;
+    --plain)
+      textmode=''
+      ;;
+    --markdown)
+      textmode="parse_mode=MarkdownV2&"
+      ;;
+    --html)
+      textmode="parse_mode=HTML&"
+      ;;
+    --quiet|--silent|-s|-q)
+      ding='disable_notification=true&'
+      ;;
+    *)
+      break
+      ;;
+    esac
+    shift
+  done  
+
+  if [ $# -eq 0 ] ; then
+    while :
+    do
+      msg=$(dd bs=$mslimit count=1 2>&-)
+      [ -z "$msg" ] && break
+      send_notification "$msg"
+      [ -n "$state" ] && break # If *state* message, we can't do multiples
+    done
+  else
+    send_notification "$@"
+  fi
+}
+
+load_file() {
+  [ ! -f "$1" ] && return 1
+  . "$1"
+}
+
+if load_file /etc/telegraph.cfg ; then
+  telegram_notify "$@"
+elif load_file $HOME/.telegraph.cfg ; then
+  telegram_notify "$@"
+else
+  die 86 "notify: not configured"
+fi
+

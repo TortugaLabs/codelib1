@@ -1,0 +1,117 @@
+#!/bin/sh
+#
+# tags:alpine-notify-srv alpine-hw
+# target::/usr/local/bin/
+# mode:755
+#
+set -euf -o pipefail
+
+bot_api="https://api.telegram.org/bot"
+
+send_notification() {
+  wget -O- "${bot_api}${bot_key}/sendMessage?${textmode}${ding}chat_id=${chat_id}&text=$(urlencode "$*")"
+}
+
+urlencode() {
+  # urlencode <string>
+  old_lc_collate=${LC_COLLATE:-}
+  LC_COLLATE=C
+  
+  local length="${#1}"
+  local i=1
+  while [ $i -le $length ] ; do
+    local c=$(expr substr "$1" $i 1)
+    case $c in
+      [a-zA-Z0-9.~_-]) printf "$c" ;;
+      *) printf '%%%02X' "'$c" ;;
+    esac
+    i=$(expr $i + 1)
+  done
+  
+  LC_COLLATE=$old_lc_collate
+}
+telegram_notify() {
+  mslimit=2048
+  textmode="parse_mode=Markdown&"
+  ding=''
+
+  while [ $# -gt 0 ]
+  do
+    case "$1" in
+    --plain)
+      textmode=''
+      ;;
+    --markdown)
+      textmode="parse_mode=Markdown&"
+      ;;
+    --html)
+      textmode="parse_mode=HTML&"
+      ;;
+    --quiet|--silent|-s|-q)
+      ding='disable_notification=true&'
+      ;;
+    *)
+      break
+      ;;
+    esac
+    shift
+  done  
+
+  if [ $# -eq 0 ] ; then
+    while :
+    do
+      msg=$(dd bs=$mslimit count=1 2>&-)
+      [ -z "$msg" ] && break
+      send_notification "$msg"
+    done
+  else
+    send_notification "$@"
+  fi
+}
+
+local_notify() {
+  local mode=send
+
+  while [ $# -gt 0 ]
+  do
+    case "$1" in
+    --quiet|--silent|-s|-q)
+      mode=queue
+      ;;
+    *)
+      break
+      ;;
+    esac
+    shift
+  done
+  (
+    cat <<-_EOF_
+	POST /$mode HTTP/0.9
+	x-demo: none
+	
+	_EOF_
+    if [ $# -eq 0 ] ; then
+      cat
+    else
+      echo "$@"
+    fi
+  ) | nc $notify_host ${notify_port:-165}
+}
+
+load_file() {
+  [ ! -f "$1" ] && return 1
+  . "$1"
+}
+
+if load_file /etc/telegraph.cfg ; then
+  telegram_notify "$@"
+elif load_file $HOME/.telegraph.cfg ; then
+  telegram_notify "$@"
+elif load_file /etc/notify.cfg ; then
+  local_notify "$@"
+elif load_file $HOME/.notify.cfg ; then
+  local_notify "$@"
+else
+  die 86 "notify: not configured"
+fi
+

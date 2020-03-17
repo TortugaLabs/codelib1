@@ -1,0 +1,71 @@
+#!/bin/sh
+#
+# DNSmasq DHCP script
+#
+set -euf -o pipefail
+
+cmd="${1:-}" ; shift || :
+mac_db=/var/local/mactab.txt
+ethers=/etc/ethers
+
+
+update_db() {
+  if (echo "$2" | grep -q ':') ; then
+    # Skip this, if it is an IPv6 address
+    return
+  fi
+  local mac="$(echo "$1" | tr A-Z a-z)" ; shift
+  local cur="$*"
+
+  # Now we make sure it it is not one of our know MAC addresses
+  local ethers=$(awk '$1 == "'"$mac"'" { print }' $ethers)
+  if [ -n "$ethers" ] ; then
+    return
+  fi
+  local now=$(date +'%s')
+  
+  if [ -f "$mac_db" ] ; then
+    set - x $(awk -vFS=',' '$1 == "'"$mac"'" { print $2 }' $mac_db)
+    shift
+  else
+    > "$mac_db"
+    set - x
+    shift
+  fi
+  if [ $# -eq 0 ] ; then
+    set - $now $now $cur
+  else
+    local first="$1" ; shift 2
+    set - $first $now "$@"
+  fi
+  local new=$(
+    awk -vFS=',' '$1 != "'"$mac"'" { print }' $mac_db
+    echo "$mac,$*"
+  )
+  echo "$new" > "$mac_db"
+}
+
+add_lease() {
+  update_db "$1" "$2"
+}
+old_lease() {
+  update_db "$1" "$2"
+}
+del_lease() {
+  update_db "$1" "$2"
+}
+
+case "$cmd" in
+add)
+  add_lease "$@"
+  ;;
+old)
+  old_lease "$@"
+  ;;
+del)
+  del_lease "$@"
+  ;;
+*)
+  echo "Ignored: $cmd" 1>&2
+  ;;
+esac

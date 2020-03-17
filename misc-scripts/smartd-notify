@@ -1,0 +1,12 @@
+#!/bin/sh
+#
+# tags:alpine-hw
+# target::/usr/local/bin/
+# mode:755
+#
+
+set -euf -o pipefail
+
+if ! msg=$(/usr/local/bin/notify "SMART@$(hostname)-$SMARTD_DEVICE: $SMARTD_FAILTYPE, $SMARTD_MESSAGE" 2>&1) ; then
+  echo "$msg"
+fi

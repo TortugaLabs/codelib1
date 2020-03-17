@@ -1,0 +1,96 @@
+#!/bin/sh
+set -euf -o pipefail
+#
+# tags:alpine-notify-srv
+# target::/usr/local/bin/
+# mode:755
+#
+# Simple shell script implementing a basic web server API
+#
+queue=/var/spool/notify
+
+queue_msg() {
+  [ ! -d $queue ] && mkdir -p "$queue"
+  msgfile=$(mktemp -p "$queue")
+  cat > $msgfile
+  echo "Created $msgfile"
+}
+
+
+if [ $# -eq 0 ] ; then
+  response_msg() {
+    local code="$1" ; shift
+    (
+      echo 'HTTP/1.1 '"$code"' '"$*"
+      echo 'Content-type: text/plain'
+      echo ''
+      echo "$*"
+    ) | unix2dos 
+  }
+  read_hdr() {
+    while read ln
+    do
+      ln="$(echo "$ln" | dos2unix)"
+      [ -z "$ln" ] && return
+      echo "$ln"
+    done
+  }
+  read_body() {
+    local hdr="$1"
+    local len=$(echo "$hdr" | grep -i content-length: | cut -d: -f2 | tr -dc 0-9)
+
+    if [ -n "$len" ] && [ $len -gt 0 ] ; then
+      dd bs=1 count="$len"
+    else
+      while read -t 3 ln
+      do
+        ln="$(echo "$ln" | dos2unix)"
+        [ x"$ln" = x"." ] && return
+        echo "$ln"
+      done
+    fi
+  }
+  read verb uri info
+  case "$uri" in
+    /send)
+	hdr=$(read_hdr)
+	response_msg 200 OK
+	read_body "$hdr" | notify
+	;;
+    /queue)
+	hdr=$(read_hdr)
+	response_msg 200 OK
+	read_body "$hdr" | queue_msg
+	;;
+    *)
+	response_msg 404 not found
+	;;
+  esac
+else
+  op="$1" ; shift
+  case "$op" in
+    cron)
+      # Run msg queue...
+      [ ! -d "$queue" ] && exit 0
+      find "$queue" -type f | while read fp
+      do
+	msg="$(cat "$fp")"
+	rm "$fp"
+	echo "$msg" | notify -s
+      done
+      ;;
+    queue)
+      if [ $# -gt 0 ] ; then
+	echo "$*" | queue_msg
+      else
+	queue_msg
+      fi
+      ;;
+    *)
+      echo "Unknow OP: $op"
+      exit 1
+  esac
+fi
+    
+
+

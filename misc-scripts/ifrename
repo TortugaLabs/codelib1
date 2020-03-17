@@ -1,0 +1,22 @@
+#!/bin/sh
+#
+# tags:alpine-nethw
+# target::/etc/network/if-pre-up.d/
+# mode:755
+#
+lockfile=/run/nameif.lock
+(
+  exec 2>&1
+  if [ -d $(dirname $lockfile) ] ; then
+   if [ -f $lockfile ] ; then
+     exit 0
+   fi
+   echo $$ > $lockfile
+  fi 
+  echo "## $0 $*"
+  nameif || echo "nameif: $?"
+) | (while read ln
+  do
+    echo "$ln" > /dev/kmsg
+  done)
+
