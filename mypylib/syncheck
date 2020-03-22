@@ -1,0 +1,7 @@
+#!/bin/sh
+
+find . -type f -name '*.py' | while read py
+do
+  echo -n "$py: "
+  python3 -m py_compile $py && echo 'OK'
+done
