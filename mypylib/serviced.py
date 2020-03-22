@@ -5,7 +5,7 @@
 import sys, os, time
 
 TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S %z"
-using_syslog = FALSE
+using_syslog = False
 
 # Unbuffered I/O
 #
@@ -99,12 +99,14 @@ def daemonize():
 def pidfile(filename):
   with open(filename,"w") as fh:
     fh.write("%d\n" % os.getpid())
-    
 
 #
 # Format timestamp
 #
-def timestamp(ts = -1):  
-  if ts == -1: ts = time.time()
-  return time.strftime(TIMESTAMP_FORMAT, ts)
- 
+def timestamp(ts = None):
+  if ts is None: ts = time.time()
+  return time.strftime(TIMESTAMP_FORMAT, time.localtime(ts))
+
+if __name__ == "__main__":
+  print(timestamp())
+  print(timestamp(3455345))
