@@ -61,6 +61,8 @@ def _io_syslog(fh,tag):
   os.close(w)
 
 def syslog_io(tag):
+  global using_syslog
+
   using_syslog = True
   _io_syslog(sys.stdout,'%s(out)' % tag)
   _io_syslog(sys.stderr,'%s(err)' % tag)
@@ -69,6 +71,8 @@ def syslog_io(tag):
 # Prepends output with a timestamp
 # 
 def ts_print(msg, mode='stdout'):
+  global using_syslog
+  
   if mode == 'stdout':
     io = sys.stdout
   elif mode == 'stderr':
