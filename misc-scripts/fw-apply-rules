@@ -27,6 +27,7 @@ die() {
 ip4rules=""
 ip6rules=""
 verbose="echo"
+xen=false
 
 [ $# -eq 0 ] && usage
 while [ $# -gt 0 ]
@@ -39,6 +40,12 @@ do
   -6)
     [ $# -eq 1 ] && die 26 "No file specified for option $1"
     ip6rules="$2" ; shift
+    ;;
+  --xen)
+    xen=true
+    ;;
+  --no-xen)
+    xen=false
     ;;
   -v)
     verbose=echo
@@ -86,8 +93,25 @@ do
   trap 'rollback;exit' SIG$i
 done
 
+xen_save() {
+  [ -z "$ip4rules" ] && return
+  xen_rules=$(iptables-save | grep physdev)
+}
+xen_restore() {
+  [ -z "$ip4rules" ] && return
+  [ -z "$xen_rules" ] && return
+  echo "$xen_rules" | tac | (
+    while read append chain rule
+    do
+      iptables -I $chain 1 $rule
+    done
+  )
+}
+
+$xen && xen_save
 [ -n "$ip4rules" ] && iptables-restore "$ip4rules"
 [ -n "$ip6rules" ] && ip6tables-restore "$ip6rules"
+$xen && xen_restore
 
 sleep 3 # Give it some time to mess-up...
 
@@ -98,6 +122,23 @@ do
     if [ x"$input" = x"ok" ] ; then
       # OK, commiting changes...
       trap "" EXIT
+      # Do not save xen dynamic rules...
+      if $xen ; then
+        if [ -n "$ip4rules" ] ; then
+          # Reload the rules so that the dynamic xen rules are removed
+          # and not saved
+          iptables-restore "$ip4rules"
+        fi
+      fi
+      if type rc-service ; then
+        [ -n "$ip4rules" ] && rc-service iptables save
+        [ -n "$ip6rules" ] && rc-service ip6tables save
+      else
+        echo "="
+        echo "Note, changes will be lost on next reboot!"
+        echo "="
+      fi
+      $xen && xen_restore
       exit 0
     fi
   else
