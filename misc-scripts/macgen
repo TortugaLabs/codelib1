@@ -48,12 +48,33 @@ m_uuidgen() {
   #uuidgen
 }  
 
+usage() {
+  cat <<-_EOF_
+	Usage: $0 [options] [prefix]
+
+	Options:
+
+	-h, --help: This list
+	-1 : Use the random unused OUI
+	-2 : (Roche Diagnostics GmbH OUI)
+	-3 : changed OUI (bioMÃ©rieux Italia S.p.A.)
+	--mac: Generate a single random mac
+	--uuid|-u : Generate uuid
+	Prefix: xx:xx:xx
+	    Generate a mac address with the given prefix.
+	_EOF_
+  exit 0
+}
+
 prefix=''
   
 while [ $# -gt 0 ]
 do
   case "$1" in
-  -1)
+  -h|--help)
+    usage
+    ;;
+  -1|--mac)
     prefix="$oui_random"
     ;;
   -2)
@@ -67,6 +88,7 @@ do
     ;;
   --uuid|-u)
     m_uuidgen
+    exit
     ;;
   *)
     break
