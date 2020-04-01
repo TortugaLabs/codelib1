@@ -28,7 +28,36 @@ fix_apk_ptrs() {
       break
     done
   fi
-   
+  if [ -d /etc/apk/cache ] ; then
+    # Update cache
+    (
+      echo ''
+      apk update || exit 0
+      old=$(ls -l /etc/apk/cache/|md5sum)
+      apk cache sync || exit 0
+      new=$(ls -l /etc/apk/cache/|md5sum)
+      if [ x"$old" != x"$new" ] ; then
+        cat <<-'_EOF_'
+	##############################################################
+	|  _____      _                 _   _             _ 
+	| |  __ \    | |               | | (_)           | |
+	| | |__) |___| |__   ___   ___ | |_ _ _ __   __ _| |
+	| |  _  // _ \ '_ \ / _ \ / _ \| __| | '_ \ / _` | |
+	| | | \ \  __/ |_) | (_) | (_) | |_| | | | | (_| |_| _  _  _
+	| |_|  \_\___|_.__/ \___/ \___/ \__|_|_| |_|\__, (_)(_)(_)(_)
+	|					     __/ |  
+	|					    |___/   
+	##############################################################
+	_EOF_
+	for n in $(seq -w 60 -1 0)
+	do
+	  echo -ne "\rRebooting in $n"
+	  sleep 1
+	done
+        reboot
+      fi
+    ) > /dev/console
+  fi
 }
 
 fix_apk_ptrs
