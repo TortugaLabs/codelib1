@@ -1,0 +1,169 @@
+#!/bin/sh
+#
+# Dynamic DNS type client for CloudFlare
+#
+# tags:cf-ddns
+# target::/usr/local/bin/
+# mode:755
+
+#
+set -euf -o pipefail
+if [ -f /etc/cfapi.conf ] ; then
+  . /etc/cfapi.conf
+elif [ -f ./cfapi.conf ]; then
+  . ./cfapi.conf
+else
+  echo "Missing cfapi.conf" 1>&2
+  exit 1
+fi
+
+
+myip_api4() {
+  echo "https://api.ipify.org"
+}
+myip_api6() {
+  echo "https://api6.ipify.org"
+}
+cf_api="https://api.cloudflare.com/client/v4/"
+
+call_api() {
+  local method="$1" path="$2" ; shift 2
+  curl -s -S -X "$method" "$cf_api$path" \
+    -H "X-Auth-Email: $auth_email" \
+    -H "X-Auth-Key: $auth_key" \
+    -H "Content-Type: application/json" \
+    "$@"
+}
+external_ip() {
+  local v="$1"
+  curl -s -S "$(myip_api$v)"
+}
+
+get_zone_id() {
+  local name="$1"
+  call_api GET zones | jq -r '.result[] | select(.name == "'"$name"'").id'
+}
+
+get_record() {
+  local zid="$1" type="$2" name="$3"
+  call_api GET zones/$zid/dns_records | jq '.result[] | select(.type == "'"$type"'" and .name == "'"$name"'")'
+}
+write_record() {
+  local proxied='' ttl='' rid="" prio=""
+  while [ $# -gt 0 ]
+  do
+    case "$1" in
+    --proxied)
+      proxied=',"proxied":true'
+      ;;
+    --no-proxied)
+      proxied=',"proxied":false'
+      ;;
+    --priority=*)
+      prio=",\"priority\":${1#--priority=}"
+      ;;
+    --ttl=*)
+      ttl=",\"ttl\":${1#--ttl=}"
+      ;;
+    --rid=*)
+      rid="${1#--rid=}"
+      ;;
+    *)
+      break
+    esac
+    shift
+  done
+  local zid="$1" type="$2" name="$3" content="$4"
+  local payload="{\"type\":\"$type\",\"name\":\"$name\",\"content\":\"$content\"$ttl$proxied$prio}"
+
+  if [ -z "$rid" ] ; then
+    local res=$(call_api POST zones/$zid/dns_records --data "$payload")
+  else
+    local res=$(call_api PUT zones/$zid/dns_records/$rid --data "$payload")
+  fi
+  if [ -z "$res" ] ; then
+    echo "API update DNS record failure!" 1>&2
+    return 1
+  fi
+  if [ x"$(echo "$res" | jq -r .success)" != x"true" ] ; then
+    echo "$res" | jq .errors 1>&2
+    return 2
+  fi
+  echo "$res"
+  return 0
+}
+
+dyndns() {
+  local ttl="--ttl=120" # default TTL
+  local output=: v=4 r=A
+  while [ $# -gt 0 ]
+  do
+    case "$1" in
+    -v)
+      output=echo
+      ;;
+    --ttl=*)
+      ttl="--ttl=${1#--ttl=}"
+      ;;
+    --no-ttl)
+      ttl=""
+      ;;
+    --ipv6|-6)
+      v=6 ; r='AAAA'
+      ;;
+    --ipv4|-4)
+      v=4 ; r='A'
+      ;;
+    *)
+      break
+    esac
+    shift
+  done
+
+
+  local fqdn="$1" ; shift
+  local host="$(echo "$fqdn" | cut -d. -f1)" domain="$(echo "$fqdn" | cut -d. -f2-)"
+  if [ $# -eq 0 ] ; then
+    local myip=$(external_ip $v)
+    if [ -z "$myip" ] ; then
+      echo "Unable to determine public IP" 1>&2
+      return 1
+    fi
+  else
+    local myip="$1" ; shift
+  fi
+
+  local zid=$(get_zone_id "$domain")
+  if [ -z "$zid" ] ; then
+    echo "Unable to find zone" 1>&2
+    return 2
+  fi
+  local current=$(get_record $zid $r "$fqdn")
+  if [ -z "$current" ] ; then
+    local rid=""
+  else
+    if [ x"$(echo "$current" | jq -r .content)" = x"$myip" ] ; then
+      echo "$fqdn: $myip [OK]" 1>&2
+      $output OK
+      return 0
+    fi
+    local rid="--rid=$(echo "$current" | jq -r .id)"
+  fi
+
+  local res
+  if res=$(write_record $ttl $rid "$zid" "$r" "$fqdn" "$myip") ; then
+    #~ echo "$res" | jq .
+    echo "$fqdn: $myip [UPDATED]" 1>&2
+    $output UPDATED
+    return 0
+  else
+    return 3
+  fi
+}
+
+"$@"
+
+#~ dyndns -4 "rover1.0ink.net" #"80.60.59.$(expr $RANDOM % 256)"
+#~ dyndns -6 "rover1.0ink.net" #"80.60.59.$(expr $RANDOM % 256)"
+
+

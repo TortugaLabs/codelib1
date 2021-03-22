@@ -11,6 +11,7 @@ bootmsg() {
 }
 
 fix_apk_ptrs() {
+  mkdir=false
   if [ ! -d /etc/apk/cache ] ; then
     for dir in /media/*
     do
@@ -20,6 +21,8 @@ fix_apk_ptrs() {
 	if ! mkdir "$dir/cache" ; then
 	  mount -o remount,ro "$dir"
 	  exit 1
+	else
+	  mkdir=true
 	fi
 	mount -o remount,ro "$dir"
       fi
@@ -28,6 +31,7 @@ fix_apk_ptrs() {
       break
     done
   fi
+  $mkdir || return 0  # only continue if directory was created
   if [ -d /etc/apk/cache ] ; then
     # Update cache
     (
@@ -39,14 +43,14 @@ fix_apk_ptrs() {
       if [ x"$old" != x"$new" ] ; then
         cat <<-'_EOF_'
 	##############################################################
-	|  _____      _                 _   _             _ 
+	|  _____      _                 _   _             _
 	| |  __ \    | |               | | (_)           | |
 	| | |__) |___| |__   ___   ___ | |_ _ _ __   __ _| |
 	| |  _  // _ \ '_ \ / _ \ / _ \| __| | '_ \ / _` | |
 	| | | \ \  __/ |_) | (_) | (_) | |_| | | | | (_| |_| _  _  _
 	| |_|  \_\___|_.__/ \___/ \___/ \__|_|_| |_|\__, (_)(_)(_)(_)
-	|					     __/ |  
-	|					    |___/   
+	|					     __/ |
+	|					    |___/
 	##############################################################
 	_EOF_
 	for n in $(seq -w 60 -1 0)
@@ -67,5 +71,5 @@ fix_apk_ptrs
 
 
 
-    
+
 
