@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# tags:alpine-notify-srv alpine-hw
+# tags:misc
 # target::/usr/local/bin/
 # mode:755
 #
@@ -40,7 +40,7 @@ send_notification() {
       break
     fi
   done
-  
+
   if [ -n "$nmsid" ] ; then
     # Succesful...
     if [ -n "$state" ] ; then
@@ -58,7 +58,7 @@ urlencode() {
   # urlencode <string>
   old_lc_collate=${LC_COLLATE:-}
   LC_COLLATE=C
-  
+
   local length="${#1}"
   local i=1
   while [ $i -le $length ] ; do
@@ -69,13 +69,14 @@ urlencode() {
     esac
     i=$(expr $i + 1)
   done
-  
+
   LC_COLLATE=$old_lc_collate
 }
 
 telegram_notify() {
   mslimit=4090
   textmode="parse_mode=MarkdownV2&"
+  prefix="*$(hostname)*:"
   ding=''
   state=''
 
@@ -86,35 +87,44 @@ telegram_notify() {
       # keep a state file
       state="${1#--state=}"
       ;;
-    --plain)
+    --plain|--text)
       textmode=''
+      prefix="($(hostname)):"
       ;;
     --markdown)
       textmode="parse_mode=MarkdownV2&"
+      prefix="*$(hostname)*:"
       ;;
     --html)
       textmode="parse_mode=HTML&"
+      prefix="<em>($(hostname))</em>:"
       ;;
     --quiet|--silent|-s|-q)
       ding='disable_notification=true&'
+      ;;
+    --prefix=*)
+      prefix="${1#--prefix=}"
+      ;;
+    --no-prefix)
+      prefix=""
       ;;
     *)
       break
       ;;
     esac
     shift
-  done  
+  done
 
   if [ $# -eq 0 ] ; then
     while :
     do
-      msg=$(dd bs=$mslimit count=1 2>&-)
+      msg="$(dd bs=$mslimit count=1 2>&-)"
       [ -z "$msg" ] && break
-      send_notification "$msg"
+      send_notification "$prefix$msg"
       [ -n "$state" ] && break # If *state* message, we can't do multiples
     done
   else
-    send_notification "$@"
+    send_notification "$prefix$@"
   fi
 }
 
@@ -128,6 +138,7 @@ if load_file /etc/telegraph.cfg ; then
 elif load_file $HOME/.telegraph.cfg ; then
   telegram_notify "$@"
 else
-  die 86 "notify: not configured"
+  echo "notify: not configured" 1>&2
+  exit 32
 fi
 
