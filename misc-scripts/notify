@@ -75,8 +75,8 @@ urlencode() {
 
 telegram_notify() {
   mslimit=4090
-  textmode="parse_mode=MarkdownV2&"
-  prefix="*$(hostname)*:"
+  textmode=""
+  prefix="($(hostname)):"
   ding=''
   state=''
 
